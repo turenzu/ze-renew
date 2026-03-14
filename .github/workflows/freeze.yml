@@ -1,16 +1,13 @@
 name: 🎮 FreezeHost 自动续期
-
 on:
   schedule:
     - cron: '0 8 * * *'
   workflow_dispatch:
-
 jobs:
   renew:
     name: 🔄 执行续期
     runs-on: ubuntu-latest
     timeout-minutes: 10
-
     steps:
       - name: 📥 拉取代码
         uses: actions/checkout@v4
@@ -19,10 +16,10 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '22'
-          cache: 'npm'
+          # ✅ 不用 cache，避免依赖 lock 文件
 
       - name: 📦 安装依赖
-        run: npm ci
+        run: npm install @playwright/test
 
       - name: 🌐 安装 Playwright 浏览器
         run: npx playwright install chromium --with-deps
