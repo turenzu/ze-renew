@@ -25,10 +25,10 @@ function sendTG(result) {
         }
 
         const msg = [
-            `🎮 FreezeHost 续期通知`,
-            `🕐 运行时间: ${nowStr()}`,
-            `🖥 服务器: FreezeHost Free`,
-            `📊 续期结果: \n${result}`,
+            `🎮 FreezeHost 自动续期战报`,
+            `🕐 时间: ${nowStr()}`,
+            `========================`,
+            `${result}`,
         ].join('\n');
 
         const body = JSON.stringify({ chat_id: TG_CHAT_ID, text: msg });
@@ -172,8 +172,17 @@ test('FreezeHost 自动续期', async () => {
 
         // ── 遍历处理每个 Token 账号 ─────────────────────────
         for (let tIndex = 0; tIndex < tokens.length; tIndex++) {
-            const currentToken = tokens[tIndex];
-            const accountLabel = `【账号 ${tIndex + 1}】`;
+            let currentToken = tokens[tIndex];
+            let customName = null;
+
+            // 支持 '自定义备注#Token' 或 '自定义备注:Token' 的格式
+            const match = currentToken.match(/^([^#:]+)[#:](.+)$/);
+            if (match) {
+                customName = match[1].trim();
+                currentToken = match[2].trim();
+            }
+
+            let accountLabel = customName ? `👤 ${customName}` : `👤 账号 ${tIndex + 1}`;
             
             console.log('\n' + '='.repeat(50));
             console.log(`🚀 开始处理 ${accountLabel}`);
@@ -204,6 +213,27 @@ test('FreezeHost 自动续期', async () => {
                     throw new Error('Discord Token 失效或被踢出，登录失败');
                 }
                 console.log('✅ Discord Token 验证有效...');
+
+                // ── 尝试自动读取 Discord 账号名 ─────────────────────
+                try {
+                    const autoName = await page.evaluate(async (tok) => {
+                        try {
+                            const res = await fetch('https://discord.com/api/v9/users/@me', {
+                                headers: { 'Authorization': tok }
+                            });
+                            if (!res.ok) return null;
+                            const data = await res.json();
+                            return data.global_name || data.username || data.email || null;
+                        } catch(err) { return null; }
+                    }, currentToken);
+                    
+                    if (autoName) {
+                        console.log(`🤖 成功抓取 Discord 档案: ${autoName}`);
+                        if (!customName) {
+                            accountLabel = `👤 ${autoName}`;
+                        }
+                    }
+                } catch (e) { }
 
                 // ── 登录 FreezeHost ───────────────────────────────────
                 console.log('🔑 打开 FreezeHost 登录页...');
@@ -294,7 +324,8 @@ test('FreezeHost 自动续期', async () => {
                     console.log('⚠️ 获取金币失败');
                 }
                 
-                allSummary.push(`${accountLabel} 💰金币: ${coins}`);
+                const prefix = tIndex === 0 ? '' : '\n';
+                allSummary.push(`${prefix}${accountLabel} | 💰 ${coins}`);
 
                 // ── 查找所有 Server Console 链接 ───────────────────────
                 console.log('🔍 查找所有 Server 的 Manage 按钮...');
@@ -320,7 +351,7 @@ test('FreezeHost 自动续期', async () => {
                     
                     await page.waitForTimeout(3000);
                     
-                    let serverLabel = `   [Server ${i+1}]`;
+                    let serverLabel = `  📦 Node ${i+1}`;
 
                     const renewalStatusText = await page.evaluate(() => {
                         const el = document.getElementById('renewal-status-console');
@@ -337,8 +368,8 @@ test('FreezeHost 自动续期', async () => {
                         if (remainingDays !== null) {
                             console.log(`  ⏳ 剩余天数：${remainingDays}`);
                             if (remainingDays > 7) {
-                                const msg = `剩余 ${remainingDays} 天 (需 ≤7 天)`;
-                                allSummary.push(`${serverLabel}: 无需 (${msg})`);
+                                const msg = `剩 ${remainingDays} 天`;
+                                allSummary.push(`${serverLabel}: ⏸️ 无需 (${msg})`);
                                 console.log('  ' + msg);
                                 shouldRenew = false;
                             } else {
@@ -365,7 +396,7 @@ test('FreezeHost 自动续期', async () => {
                         const btnText = (await renewModalBtn.innerText()).trim();
 
                         if (!btnText.toLowerCase().includes('renew instance')) {
-                            allSummary.push(`${serverLabel}: 尚未到续期时间`);
+                            allSummary.push(`${serverLabel}: ⏰ 未到时间`);
                             console.log('  ⏰ 尚未到续期时间，跳过');
                             continue;
                         }
@@ -387,7 +418,7 @@ test('FreezeHost 自动续期', async () => {
                             allSummary.push(`${serverLabel}: ⚠️ 余额不足`);
                         } else if (finalUrl.includes('err=TOOEARLY')) {
                             console.log('  ⏰ 尚未到续期时间');
-                            allSummary.push(`${serverLabel}: ⏰ 尚未到时间`);
+                            allSummary.push(`${serverLabel}: ⏰ 未到时间`);
                         } else {
                             allSummary.push(`${serverLabel}: ❓ 结果未知`);
                             console.log(`  ⚠️ 续期结果未知：${finalUrl}`);
