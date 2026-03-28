@@ -63,29 +63,6 @@ function sendTG(result) {
     });
 }
 
-// 通用 Cookie 弹窗清除函数，可在登录页和控制台页复用
-async function dismissCookiePopup(page) {
-    const cookieSelectors = [
-        'button.fc-cta-consent',
-        'button.fc-button-label',
-        '[aria-label="Consent"]',
-        'button:has-text("同意")',
-        'button:has-text("Accept")',
-        'button:has-text("Agree")',
-        'button:has-text("OK")',
-    ];
-    for (const sel of cookieSelectors) {
-        try {
-            const btn = page.locator(sel).first();
-            if (await btn.isVisible({ timeout: 1000 }).catch(() => false)) {
-                await btn.click({ force: true });
-                console.log(`  ✅ 已关闭 Cookie 弹窗 (${sel})`);
-                await page.waitForTimeout(500);
-                break;
-            }
-        } catch { }
-    }
-}
 
 async function handleOAuthPage(page) {
     console.log(`  📄 当前 URL: ${page.url()}`);
@@ -215,6 +192,26 @@ test('FreezeHost 自动续期', async ({}, testInfo) => {
 
             // 每个账号使用独立的上下文，隔离 Cookie 和 LocalStorage
             const context = await browser.newContext();
+
+            // ── 全局 Cookie 弹窗自动拦截（MutationObserver 注入）────────
+            // 在浏览器内部监控 DOM，一旦 fc-consent-root 弹窗出现立刻点掉
+            // 覆盖所有页面（登录前/后、跳转控制台等），无需在各环节手动处理
+            await context.addInitScript(() => {
+                const tryDismiss = () => {
+                    const root = document.querySelector('.fc-consent-root');
+                    if (!root) return;
+                    const btn = root.querySelector('button.fc-cta-consent') ||
+                        Array.from(root.querySelectorAll('button')).find(b =>
+                            ['Consent', 'Accept', 'Agree', 'OK', '同意'].includes(b.textContent.trim())
+                        );
+                    if (btn) btn.click();
+                };
+                const observer = new MutationObserver(tryDismiss);
+                observer.observe(document.body, { childList: true, subtree: true });
+                // 页面加载时也执行一次，防止弹窗已存在
+                tryDismiss();
+            });
+
             const page = await context.newPage();
             page.setDefaultTimeout(TIMEOUT);
             
@@ -265,10 +262,7 @@ test('FreezeHost 自动续期', async ({}, testInfo) => {
                 await page.goto('https://free.freezehost.pro', { waitUntil: 'domcontentloaded' });
 
                 console.log('📤 点击 Login with Discord...');
-                await page.click('span.text-lg:has-text("Login with Discord")');
-
-                console.log('⏳ 检测并关闭 Cookie 同意弹窗...');
-                await dismissCookiePopup(page);
+                await page.click('span.text-lg:has-text("Login with Discord")', { force: true });
 
                 console.log('⏳ 等待服务条款弹窗...');
                 const confirmBtn = page.locator('button#confirm-login');
@@ -455,10 +449,8 @@ test('FreezeHost 自动续期', async ({}, testInfo) => {
                     // ── 点击外链图标打开续期弹窗 ─────────────────────────
                     console.log('  🔍 查找续期入口...');
                     try {
-                        // 进控制台页面后也可能有 Cookie 弹窗，先清除
-                        await dismissCookiePopup(page);
-
                         // 只匹配可见的外链图标，跳过隐藏的 reviewAction 等按钮
+                        // Cookie 弹窗已由 addInitScript 全局自动处理
                         const externalLinkIcon = page.locator('i.fa-external-link-alt:visible').first();
                         const parentEl = externalLinkIcon.locator('xpath=..');
                         await parentEl.waitFor({ state: 'visible', timeout: 8000 });
