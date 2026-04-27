@@ -1,7 +1,7 @@
 name: 🎮 FreezeHost 自动续期
 on:
   schedule:
-    - cron: '15 00 */3 * *' # 每3天 UTC 00:15（北京时间 08:15）Cron 格式（分、时、日、月、周）
+    - cron: '15 00 * * *' # 每天 UTC 00:15（北京时间 08:15）Cron 格式（分、时、日、月、周）
   workflow_dispatch:
 jobs:
   renew:
